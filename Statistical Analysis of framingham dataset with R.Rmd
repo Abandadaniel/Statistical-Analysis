@@ -1,0 +1,392 @@
+---
+title: "Statistical analysis with R  "
+author: "Abanda Agbor D."
+output:
+  pdf_document: default
+  word_document: default
+---
+
+**Word count: 1832 **
+
+\newpage
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Data input -- Load packages and Import dataset
+
+```{r input, message = FALSE}
+
+# Load the relevant packages & library
+library(tidyverse)
+library(epitools)
+library(finalfit)
+
+# Import the dataset
+framingham <- read_csv("framingham_2026.csv")
+```
+
+# Data checking
+
+```{r check}
+# Inspect the dataset here
+str(framingham)
+summary(framingham) #summary statistics of entire dataset
+```
+
+*Inspecting the structure of framingham datset showed 4434 patients and 15 variables which are all numeric. Missing values are found in 6 variables viz; cigsPerDay, BPMeds, totChol, BMI, heartRate and glucose.*
+
+# Data Preparation -- Recode, remove NAs and select variables of interest.
+
+```{r prepare}
+# Select relevant variables, create working dataset and remove NAs
+
+framinghamw_sub <- framingham %>%
+  select("sex",
+         "currentSmoker",
+         "age",
+         "totChol",
+         "prevalentHyp",
+         "anyCHD",
+         "BPMeds",
+         "diabetes") %>% 
+  drop_na("sex",
+         "currentSmoker",
+         "age",
+         "totChol",
+         "prevalentHyp",
+         "anyCHD",
+         "BPMeds",
+         "diabetes")
+
+# Recode variables to factors and change factor levels for age from Numeric to Categorical
+
+framinghamw_sub <- framinghamw_sub %>%
+mutate(sex = factor(sex, levels = c(1, 2),
+                    labels = c("Male", "Female")),
+       currentSmoker = factor(currentSmoker, levels = c(0, 1),
+                              labels = c("No", "Yes")),
+       prevalentHyp = factor(prevalentHyp, levels = c(0,1),
+                             labels = c("No", "Yes")),
+       diabetes = factor(diabetes, levels = c(0,1),
+                             labels = c("No", "Yes")),
+       anyCHD = factor(anyCHD, levels = c(0,1),
+                             labels = c("No", "Yes")),
+       BPMeds = factor(BPMeds, levels = c(0,1),
+                       labels = c("No", "Yes")))
+      framinghamw_sub$age <- cut(framinghamw_sub$age, breaks = c(-Inf, 40, 60, 80), 
+                              labels = c("under 40", "40 to 59 years", "60 to 79 years"), 
+                              right = FALSE)
+      
+#Remove confounders like persons with diabetes & taking BP meds,
+framinghamw_sub <-framinghamw_sub %>% 
+  filter(diabetes!="Yes") %>% 
+  filter(BPMeds!="Yes")
+```
+
+*Framingham dataset was subset to framinghamw_sub by selecting 8 variables (sex, age, currentSmoker, totChol, prevalentHyp, diabetes, BPMeds and CHD). I cleaned the dataset by removing 52 NAs from totChol and 61 NAs from BPMeds. Except totChol, all remaining seven varaibles were recoded to factor levels. Diabetics and patients on BP medication were excluded to remove confounders for effect measurement*
+
+# Exploratory Data Analysis
+
+The working dataset has 4073 study participants and 8 variables. To determine how much totChol, age, smoking status and hypertension contribute to occurrence of coronary heart disease (CHD) at the end of the study period, CHD is the binary categorical outcome variable with values renamed as No (0) and Yes (1). Age was transformed into a categorical variable of three levels ("under 40", "40 to 59 years", "60 to 79 years") to asses specifically the effect 0f older age groups on occurrence of CHD.
+
+**The numerical variable is**
+
+totChol: serum total cholesterol level (mg/dl)
+
+**The categorical variables are:**
+
+1. currentSmoker: Yes or No 
+2. age: "under 40", "40 to 59 years" & "60 to 79 years" 
+3. prevalentHyp: Yes or No 
+4. sex: Male for female friends
+
+I first looked at the summary statistics for the whole dataset.
+
+**Numerical analysis**
+
+I first investigated the association between CHD and totChol by calculating summary statistics of totChol(mean, median, and standard deviation) for each CHD status (Yes or No) to get a first impression of the association. I then investigated the association between CHD and the categorical variables (currentSmoker, age and prevalentHyp) by creating contingency tables for each variable.
+
+**Graphical analysis**
+
+I used histograms for each CHD subgroup to check the distribution of totChol (numerical variable). I later created boxplots for totChol to visualise the difference in centre and spread between patients with CHD and those without CHD.
+
+```{r explore numerical analysis }
+# Overview of the dataset summary statistics
+summary(framinghamw_sub)
+```
+
+```{r explore summary statistics per CHD status}
+# Summary statistics for totChol per CHD status
+framinghamw_sub %>%
+group_by(anyCHD) %>%
+summarize(meantotChol=mean(totChol), stdevtotChol=sd(totChol), mediantotChol=median(totChol))
+```
+
+```{r explore check for outiers}
+# Check outliers with outthree SD
+framinghamw_sub %>%
+  select(totChol) %>% 
+  filter(totChol < mean(totChol) -3*sd(totChol) | 
+        totChol > mean(totChol) + 3*sd(totChol))
+```
+
+```{r explore graphical analysis}
+# Numerical variable Histogram for totChol by anyCHD status
+framinghamw_sub %>%
+ggplot(aes(x=totChol)) +
+geom_histogram(aes(y=..density.., fill=..count..),binwidth=2)+
+geom_density(aes(y=..density..)) +
+facet_wrap(~anyCHD) +
+theme_bw() + ## remove gray background
+theme(panel.grid=element_blank()) ## remove grid
+```
+
+```{r explore grapical analysis continue }
+# Numerical variable, Boxplot for totChol by any CHD status
+framinghamw_sub %>%
+ggplot(aes(x=anyCHD, y=totChol, color=anyCHD)) +
+geom_boxplot() +
+scale_color_brewer(palette="Dark2") +
+geom_point(shape=16,alpha=0.2, position=position_jitter()) +
+labs(y='Total Cholesterol (mg/dl)') +
+theme_bw() +
+theme(panel.grid=element_blank(),legend.position="none",axis.title.x=element_blank ())
+# (e.g. create relevant plots, summary statistics, contingency tables)
+
+```
+
+```{r explore cross tabulations}
+# Categorical variables
+# Create a cross-tabulation with proportions and row totals for currentsmoker
+framinghamw_sub %>%
+select(anyCHD,currentSmoker) %>%
+summary_factorlist(dependent ="anyCHD",explanatory = "currentSmoker",column = F,total_col = T)
+
+# Create a cross-tabulation with proportions and row totals for prevalent Hypertension
+framinghamw_sub %>%
+select(anyCHD,prevalentHyp) %>%
+summary_factorlist(dependent ="anyCHD",explanatory = "prevalentHyp",column = F,total_col = T)
+
+# Create a cross-tabulation with proportions and row totals for age
+framinghamw_sub %>%
+select(anyCHD,age) %>%
+summary_factorlist(dependent ="anyCHD",explanatory = "age",column = F,total_col = T)
+
+# Create a cross-tabulation with proportions and row totals for sex
+framinghamw_sub %>%
+select(anyCHD,sex) %>%
+summary_factorlist(dependent ="anyCHD",explanatory = "sex",column = F,total_col = T)
+```
+
+The the summary statistics for the framinghamw_sub dataset showed that, 1071 out of the 4073   patients developed CHD by the end of the follow up, and 3003 patients did not. The out-three SD method revealed 22 outliers in totChol variable and there were no missing values in the dataset.
+The summary statistics by CHD status showed that patients who had CHD by the end of the follow up period had higher mean serum cholesterol compared to those patients who didnot have CHD.
+The histogram suggests a right skew for totChol due to extreme value of 696 in the dataset. 
+
+For the categorical variables, contingency tables from the Exploratory Data Analysis suggested that a very large excess of patients (40.4%) between 60-79 years had CHD at the end of study compared to the other age groups; Also, a higher percentage of hypertensive patients (36.7%) had CHD compared to non-hpertensives; Current smokers had a slight increase (27.3%) in developing CHD compared to non-smokers; Finally, a large excess of male patients (35.2%) developed CHD compared to the female participants, suggesting males sex is highly associated with developing CHD while (80.9%) did not develop CHD.  
+
+# Develop the analysis plan
+To determine whether the numerical variable (totChol) is associated with occurence of CHD, in addition to the boxplots from the exploratory data analysis, I plan to use t-tests comparing the mean of the variable between the two CHD subgroups. The null hypothesis for the t-tests will be that there is no difference in means. I will perform two-sided tests, so our alternative hypothesis will be that there is a difference between the means. 
+To determine whether the categorical variables are associated with CHD status, in addition to the contingency tables from the exploratory data analysis, I plan to use chi-square tests to evaluate the association between CHD status  and age categories. I also plan to use the risk ratio method from epitab to calculate the risk of developing CHD in current smokers. I will also use chi-square tests to investigate if the prevalence of hypertension is associated with smoking status. The null hypothesis is that there is no association between all the two categorical variables. 
+Finally, causation effect of explanatory variables (totChol, prevalentHyp,currentsmoker and age) to outcome variable (CHD status) was investigated using logistic regression analysis in the entire population, then male and female populations. The logit odds was calculated for the outcome variable, and back transformed to give odds ratio. Anova analysis was performed for all three outputs to investigate the model fit. The null hypothesis is that the odds ratio is equal to 1, meaning that there is no effect of the explanatory variables on the outcome (CHD). For all tests, we will use a significance level of 5%. 
+
+# Investigate the assumptions
+
+In addition to the histograms obtained in the graphical exploratory data analysis, I created QQ-plots for both CHD subgroups for totChol to check the assumption of normality of the t-tests. Since the exploratory data analysis histograms for totChol  isn’t normally distributed, I logtransformed this variable and checked whether the transformed variable is normally distributed. I further tested the assumption of homoscedasticity (equal variances) of the t-test with F-tests.
+To check whether the Chi-square test could be used for all categorical variables, I looked whether all
+expected values were greater than 5.
+Anova analysis was done to check for model fit during binomial logistic regression analysis.
+
+```{r assumptions numerical variable}
+# QQ-plot for totChol
+framinghamw_sub %>%
+ggplot(aes(sample=totChol)) +
+stat_qq() +
+stat_qq_line(color=2) +
+facet_wrap(~anyCHD) +
+labs(title="Normal Q-Q Plot") + ## add title
+theme_bw() + ## remove gray background
+theme(panel.grid=element_blank()) ## remove grid
+
+# Histogram for log(totChol)
+framinghamw_sub %>%
+ggplot(aes(x=log(totChol))) +
+geom_histogram(aes(y=..density.., fill=..count..),bins=30)+
+geom_density(aes(y=..density..)) +
+facet_wrap(~anyCHD) +
+theme_bw() + ## remove gray background
+theme(panel.grid=element_blank()) ## remove grid
+
+# Test of equality of variances on logtotChol
+framinghamw_sub %>%
+var.test(log(totChol) ~ anyCHD, ., alternative = "two.sided")
+# Test of equality of variances on totChol
+framinghamw_sub %>%
+var.test((totChol) ~ anyCHD, ., alternative = "two.sided")
+```
+
+```{r assumptions categorical variable}
+# currentSmoker: expected values
+framinghamw_sub%>%
+select(currentSmoker,anyCHD) %>%
+table() %>%
+chisq.test() %>%
+.$expected
+
+# age: expected values
+framinghamw_sub%>%
+select(age,anyCHD) %>%
+table() %>%
+chisq.test() %>%
+.$expected
+
+# sex: expected values
+framinghamw_sub%>%
+select(sex,anyCHD) %>%
+table() %>%
+chisq.test() %>%
+.$expected
+
+# prevalentHyp: expected values
+framinghamw_sub%>%
+select(prevalentHyp,anyCHD) %>%
+table() %>%
+chisq.test() %>%
+.$expected
+```
+Both histograms and QQ-plots for totChol showed that the variable was not normally distributed (Right skewed). So, a log transformation was sufficient to make it close to normal. The slightly significant F-tests of the log (totChol) at value 0.41 which is p>0.015 and the not significant F-test of totChol at 0.06, coupled with a similar spread in boxplot and standard deviation, I chose to perform Welch’s t-test for totChol variable.
+Finally, since there were at least 5 patients in each cell of all contingency tables, I tested the significance of the association between CHD status and each categorical variable with Chi-square tests.
+
+
+# Carry out the analysis
+
+```{r analysis_numerical_values_Boxplot}
+# Boxplot for log(totChol)
+framinghamw_sub%>%
+ggplot(aes(x=anyCHD, y=log(totChol), color=anyCHD)) +
+geom_boxplot() +
+scale_color_brewer(palette="Dark2") +
+geom_point(shape=16,alpha=0.2, position=position_jitter()) +
+labs(y='log(totChol)') +
+theme_bw() +
+theme(panel.grid=element_blank(),legend.position="none",axis.title.x=element_blank ())
+```
+
+```{r analysis_numerical_values_Total_Cholesterol}
+# t-tests for log totChol
+framinghamw_sub %>% t.test(log(.$totChol)~.$anyCHD,data=.)
+
+# 95% CI for ratio of totChol (yes/no)
+exp(t.test(log(framinghamw_sub$totChol)~framinghamw_sub$anyCHD,data=framinghamw_sub)$conf.int[1])
+exp(t.test(log(framinghamw_sub$totChol)~framinghamw_sub$anyCHD,data=framinghamw_sub)$conf.int[2])
+```
+```{r analysis catgegorical variables}
+# calculate risk ratio between current smoker and CHD
+Smoking_Status <- tibble(CurrentSmoker = c(rep("Yes",2036),rep("No",2037)),
+                        anyCHD = c(rep("Yes",556),rep("No",1480),rep("Yes",515),rep("No",1522)))
+theme(panel.grid=element_blank(),legend.position="none",axis.title.x=element_blank ())
+Smoking_Status %>%
+  table() %>%
+  epitab(.,method="riskratio")
+```
+
+```{r analysis cat variables of age and CHD}
+# calculate chisquare test for association of age and CHD
+# age: Perform Chi-square test
+framinghamw_sub %>%
+select(age,anyCHD) %>%
+table() %>%
+chisq.test()
+```
+
+```{r cat variables of hypertension and smoking}
+# calculate chisquare test for hypertension and smoking status
+# prevalentHyp: Perform Chi-square test
+framinghamw_sub %>%
+select(prevalentHyp,currentSmoker) %>%
+table() %>%
+chisq.test()
+```
+
+```{r analysis logistics regression for total pop}
+# Effect of totChol, smoking status, Age and Hypertension in the total population
+CHD_modtotPop <- glm(anyCHD~currentSmoker + totChol + age + prevalentHyp,
+                     data=framinghamw_sub,family=binomial("logit"))
+summary(CHD_modtotPop) 
+
+# Extract the coefficients and back-transform
+exp(cbind(OR=CHD_modtotPop$coeff,confint(CHD_modtotPop)))
+
+# Print out the Analysis of Deviance table
+anova(CHD_modtotPop,test = "Chisq") 
+```
+
+```{r analysis logistics regression female sub pop}
+# Create female data subset
+Female_data <- subset(framinghamw_sub, sex =="Female")
+CHD_modFemale <- glm(anyCHD~currentSmoker + totChol + age + prevalentHyp, 
+                     data=Female_data,family=binomial("logit"))
+summary(CHD_modFemale) 
+
+# Extract the coefficients and back-transform
+exp(cbind(OR=CHD_modFemale$coeff,confint(CHD_modFemale)))
+
+# Print out the Analysis of Deviance table
+anova(CHD_modFemale ,test = "Chisq") 
+```
+
+```{r analysis logistics regression male sub pop}
+# Create female data subset
+male_data <- subset(framinghamw_sub, sex =="Male")
+CHD_modmale <- glm(anyCHD~currentSmoker + totChol + age + prevalentHyp, 
+                     data = male_data,family=binomial("logit"))
+summary(CHD_modmale) 
+
+# Extract the coefficients and back-transform
+exp(cbind(OR=CHD_modmale$coeff,confint(CHD_modmale)))
+
+# Print out the Analysis of Deviance table
+anova(CHD_modmale ,test = "Chisq") 
+```
+
+# Interpretation
+
+The t-test confirmed that total cholesterol (t=-10.14,df=1919.4,p=2.25x10-16) was found to be a risk factor as there was a significant difference in mean serum cholesterol between the two CHD subgroups. The 95% CI for log(totChol) is for the difference in total serum cholesterol between subgroups (Yes - No) in the log scale. This is equivalent to the 95% CI for log(Yes/No), the log of the ratio of sizes between the two subgroups. I exponentiated the 95% CI to get the 95% CI for the ratio of serum cholesterol (95% CI: 0.93-0.95) which doesn’t include 1. Therefore, the difference between serum cholesterol in patients with CHD is statistically significant from that in patients without CHD. In other words, those with CHD had a slightly higher serum cholesterol level between (0.93-0.95)mg/dl than patients without CHD.
+
+For the categorical variables, contingency tables from the Exploratory Data Analysis suggested that a very large excess of patients (40.4%) between 60-70 years had CHD at the end of study compared to the other age groups; Also, a higher percentage of hypertensive patients had CHD compared to non-hpertensives; Current smokers had a slight increase in developing CHD compared to non-smokers; Finally, a large excess of male patients developed CHD compared to the female participants, suggesting males sex is highly associated with developing CHD. 
+
+From the risk ratio analysis, we see that the risk of developing CHD is thesame between smokers and non-smokers (RR = 1.1, p = 0.14)  
+
+From the Chi-square tests, we see that age had a huge significant association with
+CHD status (Chi-squared=100.7, df=2, p=2.2x10-16).Hypertension also had an association with
+smoking status (Chi-squared=32.2, df=1, p-value=1.39x10-8). 
+
+Regression analysis in the entire population showed that:
+1. In the general population, patients who were 60-79 years had 2.6 times higher odds of developing CHD compared to other age groups (p= 1.72x10-8, OR = 2.6, 95% CI = 1.93-3.5)
+2. Smoking status is statistically significant with the occurence of CHD but the odds of developing CHD between smokers and non smokers was thesame (p= 0.0002, OR = 1.32, 95% CI = 1.1-1.5) 
+3. There was no difference in the odds of developing CHD in the population with every 1mg/dl increase in serum cholesterol (p= 5x10-14, OR = 1, 95% CI = 1.004 - 1.008)
+4. Having hypertension slightly increased the odds of developing CHD by 1.7 times (p= 5.19x10-12, OR = 1.7, 95% CI = 1.5 - 2.0)
+
+Regression analysis in the female population showed that:
+1.Female patients who were 60-79 years had 2.3 times higher odds of developing CHD compared to other age groups (p= 0.00458, OR = 2.3, 95% CI = 1.46-3.77) which is slightly lower than general population.
+2. Smoking status is not statistically significant in determining the occurence of CHD p=(0.38) 
+3. There was no difference in the odds of developing CHD within females (p= 1.1x10-9, OR = 1, 95% CI = (1.005 - 1.010) despite a 1mg/dl increase in serum cholesterol levels
+4. Having hypertension slightly increased the odds of developing CHD by 1.8 times (p= 4.0x10-7, OR = 1.8, 95% CI = 1.45 - 2.33) which is slightly higher than the general population.
+
+Regression analysis in the male population showed that:
+1.Male patients who were 60-79 years had 2.65 times higher odds of developing CHD compared other age groups (p= 4.6x10-7, OR = 2.65, 95% CI = 1.8-3.9) which is slightly higher than general population.
+2. Smoking status is not statistically significant in determining the occurence of CHD which is a similar trend in female population (p=0.62)
+3. There was no difference in the odds of developing CHD within males (p= 5.9x10-9, OR = 1.01, 95% CI = (1.005 - 1.62) despite a 1mg/dl increase in serum cholesterol levels
+4. Having hypertension slightly increased the odds of developing CHD by 1.8 times (p= 2.88x10-5, OR = 1.56, 95% CI = 1.3 - 1.9) which is slightly higher than the general population.
+
+All model fit were statistically signifcant following anova analysis.
+
+# Conclusion
+
+Overall, patients aged 60-79 years  were more likely to develop CHD in the entire population and male and female populations. Meaning age 60-79 is independently associated with a 2.5 times higher risk of developing CHD. 
+Smoking status is a confounder varaible, as we see that in the general population, it was statistically significant to the development of CHD. But when broken by sub population of males (p=0.62) and female (p=0.38), it showe a p value >0.05. A simpson's effect.
+Finally, In the general popolation risk ratio analysis showed smoking does not increase the likelihood of developing CHD that is, the risk of developing CHD is the same for smokers and non-smokers
+
+
+
